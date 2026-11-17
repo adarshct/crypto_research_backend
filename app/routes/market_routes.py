@@ -28,8 +28,9 @@ router = APIRouter(
 async def get_coins(
     currency: str = Query(default="usd"),
     page: int = Query(default=1, ge=1),
-    per_page: int = Query(default=20, ge=1, le=100),
+    per_page: int = Query(default=100, ge=1, le=100),
     sort_by: str = Query(default="market_cap_desc"),
+    filter: int = Query(default=0, ge=0, le=3),
 ):
     try:
         coins = await get_market_coins(
@@ -37,6 +38,7 @@ async def get_coins(
             page=page,
             per_page=per_page,
             sort_by=sort_by,
+            filter=filter,
         )
 
         return {
