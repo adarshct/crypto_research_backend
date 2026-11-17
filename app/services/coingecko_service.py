@@ -68,8 +68,9 @@ async def _fetch_json(
 async def get_market_coins(
     currency: str = "usd",
     page: int = 1,
-    per_page: int = 20,
+    per_page: int = 100,
     sort_by: str = "market_cap_desc",
+    filter: int = 0,
 ):
     url = f"{BASE_URL}/coins/markets"
 
@@ -86,12 +87,52 @@ async def get_market_coins(
         f"market_coins_{currency}_{page}_{per_page}_{sort_by}"
     )
 
-    return await _fetch_json(
+    coins = await _fetch_json(
         url=url,
         params=params,
         cache_key=cache_key,
         cache_seconds=60,
     )
+
+    if filter == 0:
+        return coins
+
+    elif filter == 1:
+        filtered_coins = [
+            coin for coin in coins
+            if 0 < (coin.get("market_cap_rank") or 0) <= 100
+        ]
+
+        return sorted(
+            filtered_coins,
+            key=lambda coin: coin["market_cap_rank"],
+        )
+
+    elif filter == 2:
+        filtered_coins = [
+            coin for coin in coins
+            if (coin.get("price_change_percentage_24h") or 0) > 0
+        ]
+
+        return sorted(
+            filtered_coins,
+            key=lambda coin: coin.get("price_change_percentage_24h") or 0,
+            reverse=True,
+        )
+
+    elif filter == 3:
+        filtered_coins = [
+            coin for coin in coins
+            if (coin.get("price_change_percentage_24h") or 0) < 0
+        ]
+
+        return sorted(
+            filtered_coins,
+            key=lambda coin: coin.get("price_change_percentage_24h") or 0,
+        )
+
+    else:
+        raise ValueError("Invalid filter. Use 0, 1, 2, or 3.")
 
 
 async def get_coin_details(coin_id: str):
