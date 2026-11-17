@@ -74,65 +74,123 @@ async def get_market_coins(
 ):
     url = f"{BASE_URL}/coins/markets"
 
-    params = {
-        "vs_currency": currency,
-        "order": sort_by,
-        "per_page": per_page,
-        "page": page,
-        "sparkline": "true",
-        "price_change_percentage": "24h,7d",
-    }
-
-    cache_key = (
-        f"market_coins_{currency}_{page}_{per_page}_{sort_by}"
-    )
-
-    coins = await _fetch_json(
-        url=url,
-        params=params,
-        cache_key=cache_key,
-        cache_seconds=60,
-    )
-
+    # All coins
     if filter == 0:
-        return coins
+        params = {
+            "vs_currency": currency,
+            "order": sort_by,
+            "per_page": per_page,
+            "page": page,
+            "sparkline": "true",
+            "price_change_percentage": "24h,7d",
+        }
 
-    elif filter == 1:
+        return await _fetch_json(
+            url=url,
+            params=params,
+            cache_key=(
+                f"market_coins_{currency}_{page}_{per_page}_{sort_by}"
+            ),
+            cache_seconds=60,
+        )
+
+    # Top 100
+    if filter == 1:
+        params = {
+            "vs_currency": currency,
+            "order": "market_cap_desc",
+            "per_page": 100,
+            "page": 1,
+            "sparkline": "true",
+            "price_change_percentage": "24h,7d",
+        }
+
+        coins = await _fetch_json(
+            url=url,
+            params=params,
+            cache_key=f"market_coins_top100_{currency}",
+            cache_seconds=60,
+        )
+
         filtered_coins = [
             coin for coin in coins
             if 0 < (coin.get("market_cap_rank") or 0) <= 100
         ]
 
-        return sorted(
-            filtered_coins,
-            key=lambda coin: coin["market_cap_rank"],
-        )
+        start = (page - 1) * per_page
+        end = start + per_page
 
-    elif filter == 2:
-        filtered_coins = [
-            coin for coin in coins
-            if (coin.get("price_change_percentage_24h") or 0) > 0
-        ]
+        return filtered_coins[start:end]
 
-        return sorted(
-            filtered_coins,
-            key=lambda coin: coin.get("price_change_percentage_24h") or 0,
-            reverse=True,
-        )
+    # Gainers and Losers
+    if filter in (2, 3):
+        source_per_page = 250
+        required_count = page * per_page
 
-    elif filter == 3:
-        filtered_coins = [
-            coin for coin in coins
-            if (coin.get("price_change_percentage_24h") or 0) < 0
-        ]
+        filtered_coins = []
+        source_page = 1
 
-        return sorted(
-            filtered_coins,
-            key=lambda coin: coin.get("price_change_percentage_24h") or 0,
-        )
+        while len(filtered_coins) < required_count:
+            params = {
+                "vs_currency": currency,
+                "order": "market_cap_desc",
+                "per_page": source_per_page,
+                "page": source_page,
+                "sparkline": "true",
+                "price_change_percentage": "24h,7d",
+            }
 
-    else:
-        raise ValueError("Invalid filter. Use 0, 1, 2, or 3.")
+            coins = await _fetch_json(
+                url=url,
+                params=params,
+                cache_key=(
+                    f"market_coins_filtered_{currency}_{source_page}"
+                ),
+                cache_seconds=60,
+            )
+
+            if not coins:
+                break
+
+            if filter == 2:
+                matching_coins = [
+                    coin for coin in coins
+                    if (coin.get("price_change_percentage_24h") or 0) > 0
+                ]
+            else:
+                matching_coins = [
+                    coin for coin in coins
+                    if (coin.get("price_change_percentage_24h") or 0) < 0
+                ]
+
+            filtered_coins.extend(matching_coins)
+
+            if len(coins) < source_per_page:
+                break
+
+            source_page += 1
+
+        # Sort matching coins by percentage change.
+        if filter == 2:
+            filtered_coins.sort(
+                key=lambda coin: (
+                    coin.get("price_change_percentage_24h") or 0
+                ),
+                reverse=True,
+            )
+        else:
+            filtered_coins.sort(
+                key=lambda coin: (
+                    coin.get("price_change_percentage_24h") or 0
+                ),
+            )
+
+        start = (page - 1) * per_page
+        end = start + per_page
+
+        return filtered_coins[start:end]
+
+    raise ValueError("Invalid filter. Use 0, 1, 2, or 3.")
 
 
 async def get_coin_details(coin_id: str):
