@@ -1,4 +1,5 @@
 
+import os
 import time
 
 import httpx
@@ -6,14 +7,12 @@ import httpx
 
 BASE_URL = "https://api.coingecko.com/api/v3"
 
-# Cache storage: {key: (expiry_time, response_data)}
-_cache = {}
+COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY")
 
-# Keep expired data temporarily for fallback during API failures.
-_stale_cache = {}
-
-# Reuse one HTTP client.
 _client = httpx.AsyncClient(timeout=20.0)
+
+_cache = {}
+_stale_cache = {}
 
 
 async def _fetch_json(
@@ -24,23 +23,30 @@ async def _fetch_json(
 ):
     now = time.monotonic()
 
-    # Return cached response if it is still valid.
     cached = _cache.get(cache_key)
 
     if cached and cached[0] > now:
         return cached[1]
 
-    # Preserve previous data for fallback.
     if cached:
         _stale_cache[cache_key] = cached[1]
 
+    headers = {}
+
+    if COINGECKO_API_KEY:
+        headers["x-cg-demo-api-key"] = COINGECKO_API_KEY
+
     try:
-        response = await _client.get(url, params=params)
+        response = await _client.get(
+            url,
+            params=params,
+            headers=headers,
+        )
+
         response.raise_for_status()
 
         data = response.json()
 
-        # Save successful response.
         _cache[cache_key] = (
             time.monotonic() + cache_seconds,
             data,
@@ -51,8 +57,6 @@ async def _fetch_json(
         return data
 
     except httpx.HTTPError:
-        # Return previous data if CoinGecko is unavailable
-        # or has temporarily rate-limited our requests.
         stale_data = _stale_cache.get(cache_key)
 
         if stale_data is not None:
